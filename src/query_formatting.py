@@ -31,11 +31,18 @@ class PatentsViewQueryFormatting:
 
     @staticmethod
     def format_year_range(beginning_date, end_date):
-        start = PatentsViewQueryFormatting.get_beginning_of_year(beginning_date)
-        start = PatentsViewQueryFormatting.datetime_to_iso_date(start)
-        end = PatentsViewQueryFormatting.get_end_of_year(end_date)
-        end = PatentsViewQueryFormatting.datetime_to_iso_date(end)
-        return ['{"_gte":{"patent_date":"%s"}}' % str(start), '{"_lte":{"patent_date":"%s"}}' % str(end)]
+        if not beginning_date and not end_date:
+            raise ValueError("Must provide a beginning date, an end_date, or both.")
+        lst = []
+        if beginning_date:
+            start = PatentsViewQueryFormatting.get_beginning_of_year(beginning_date)
+            start = PatentsViewQueryFormatting.datetime_to_iso_date(start)
+            lst.append('{"_gte":{"patent_date":"%s"}}' % str(start))
+        if end_date:
+            end = PatentsViewQueryFormatting.get_end_of_year(end_date)
+            end = PatentsViewQueryFormatting.datetime_to_iso_date(end)
+            lst.append('{"_lte":{"patent_date":"%s"}}' % str(end))
+        return lst
 
     @staticmethod
     def get_date_difference(iso_date_one, iso_date_two):
