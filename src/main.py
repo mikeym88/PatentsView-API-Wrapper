@@ -1,7 +1,6 @@
 from query_formatting import PatentsViewQueryFormatting as PVQF
 import requests
 import json
-from pprint import pprint
 from sqlalchemy import *
 from sqlalchemy.orm import *
 from sqlalchemy.ext.declarative import declarative_base
@@ -13,7 +12,7 @@ import argparse
 Base = declarative_base()
 engine = create_engine('sqlite:///patensview.db')
 
-
+# Move Base classes to different file: https://stackoverflow.com/a/7479122/6288413
 class AlternateName(Base):
     __tablename__ = "alternate_company_names"
 
@@ -232,7 +231,7 @@ def add_patents(patents):
             assignee_last_name = assignee["assignee_last_name"]
 
             # Check if the assignee is in one of the tables: companies, alternate_names
-            assignee_id = session.query(Company).filter(func.lower(Company.name) == assignee_organization.lower()).first()
+            assignee_id = session.query(Company).filter(func.lower(Company.name) == assignee_organization.lower())
             assignee_alternate_id = None
             print(assignee_id, assignee_alternate_id)
             if not assignee_id:
@@ -287,20 +286,37 @@ def process_all_companies_in_db():
 
 def main():
     options = get_options()
+
     # Insert company names
-    insert_names(options.path[0])
+    if options.path:
+        insert_names(options.path[0])
 
     add_patents(get_all_company_patents("ABBOTT LABORATORIES", 2006, 2007, verbose=True))
 
 
 def get_options():
-    parser = argparse.ArgumentParser(
-        description="A script that calls the PatentsView API.",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+    parser = argparse.ArgumentParser(description="A script that calls the PatentsView API.",
+        # formatter_class=argparse.RawDescriptionHelpFormatter
     )
+
     parser.add_argument(
-        'path', type=str, metavar="path", nargs=1,
+        '-p', '--path', type=str, metavar="path", nargs=1,
         help="The path of the spreadsheet that has the list of names and alternate names."
+    )
+
+    parser.add_argument(
+        '--start-date', type=int, metavar="start_date", nargs=1,
+        help="The patents will have a grant date greater than or equal to the start date."
+    )
+
+    parser.add_argument(
+        '--end-date', type=int, metavar="end_date", nargs=1,
+        help="The patents will have a grant date less than or equal to the end date."
+    )
+
+    parser.add_argument(
+        '-c', '--companies', type=str, metavar="companies", nargs='+',
+        help="The companies whose patents you want to retrieve."
     )
 
     options = parser.parse_args()
