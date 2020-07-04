@@ -50,7 +50,8 @@ class Company(Base):
 class Patent(Base):
     __tablename__ = 'patents'
     # id/patent_id
-    patent_number = Column(String, primary_key=True, autoincrement=False)
+    id = Column(Integer, primary_key=True)
+    patent_number = Column(String)
     patent_title = Column(String)
     company_id = Column(Integer, ForeignKey('companies.id'))
     company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id'), nullable=True)
@@ -59,6 +60,11 @@ class Patent(Base):
     uspc_class = Column(String)
     assignee_first_name = Column(String)
     assignee_last_name = Column(String)
+
+    # the combination of Patent Number, Company Name ID, and Alternate Name ID should be unique
+    # Source: https://stackoverflow.com/a/10061143/6288413
+    __table_args__ = (UniqueConstraint('patent_number', 'company_id', 'company_alternate_name_id',
+                                       name='_customer_location_uc'),)
 
     def __init__(self, patent_number, patent_title, company_id, year, grant_date, uspc_class,
                  assignee_first_name, assignee_last_name, company_alternate_name_id=None):
@@ -84,7 +90,6 @@ Base.metadata.create_all(engine)
 Base.metadata.bind = engine
 dbSession = sessionmaker(bind=engine)
 session = dbSession()
-
 
 
 # setting for searching for company name
@@ -114,20 +119,20 @@ def get_all_company_patents(company, beginning_year=None, end_year=None, verbose
 def get_one_page_of_company_patents(company, beginning_year=None, end_year=None, page=1, perpage=25, verbose=False):
     print("Requesting PatentsView: %s, page %d" % (company, page))
     company = html.escape(company).replace("&#x27;", "'")
-    company_query = '{"%s":{"assignee_organization":"%s"} }' % (COMPANY_SEARCH_CRITERIA, company)
+    company_query = '{"%s":{"assignee_organization":"%s"}}' % (COMPANY_SEARCH_CRITERIA, company)
     date_range = None
 
     if beginning_year is not None and end_year is not None:
         date_range = PVQF.format_year_range(str(beginning_year) + "-01-01", str(end_year) + "-12-31")
     if date_range is not None:
-        search_query = PVQF.pv_and_or("_and", company_query + date_range)
+        search_query = PVQF.pv_and_or("_and", [company_query] + date_range)
     else:
         search_query = company_query
 
-    results_format = ('["patent_number","patent_date","patent_year","assignee_organization", "app_date",'
+    results_format = ('["patent_number","patent_date","patent_year","assignee_organization","app_date",'
                       '"patent_title","uspc_mainclass_id","assignee_first_name","assignee_last_name"]'
                       )
-    sorting_format = '{"page": %d,"per_page": %d}' % (page, perpage)
+    sorting_format = '{"page":%d,"per_page":%d}' % (page, perpage)
     response_in_json = patentsview_get_request(patent_search_endpoint, search_query,
                                                results_format, sorting_format, verbose=verbose)
     response = json.loads(response_in_json)
@@ -139,8 +144,10 @@ def get_one_page_of_company_patents(company, beginning_year=None, end_year=None,
 # https://stackoverflow.com/questions/41686536/querying-patentsview-for-patents-of-multiple-assignee-organization
 def patentsview_get_request(endpoint, query_param, format_param=None, options_param=None, sort_param=None,
                             verbose=False):
-    if endpoint == "" and query_param == "":
-        return False
+    if not endpoint:
+        raise ValueError("Endpoint is empty or None.")
+    if not query_param:
+        raise ValueError("query_param is empty or None.")
 
     endpoint_query = endpoint + "?q=" + query_param
     if format_param is not None:
@@ -205,31 +212,77 @@ def get_company_primary_id(name):
     return None
 
 
-def add_patents(patents, company_id, company_alternate_name_id, company_name):
+def add_patents(patents):
     patent_objects = []
     for p in patents:
         uspc_main_classes = ""
 
+        # Concatenate the USPC Main class codes into the 'uspc_class' field
+        # Example entry: '250; 376; 976; '
         for mainclass in p["uspcs"]:
             if mainclass["uspc_mainclass_id"]:
                 uspc_main_classes += mainclass["uspc_mainclass_id"] + "; "
 
-        p_obj = Patent(patent_number=p["patent_number"],
-                       patent_title=p["patent_title"],
-                       company_id=company_id,
-                       year=p["patent_year"],
-                       grant_date=p["patent_date"],
-                       uspc_class=uspc_main_classes,
-                       # TODO: fix this.
-                       assignee_first_name=None,    # p["assignees"]["assignee_first_name"],
-                       assignee_last_name=None,      # p["assignees"]["assignee_last_name"],
-                       company_alternate_name_id=company_alternate_name_id
-                       )
-        # TODO: handle case where a patent is assigned to more than 1 company
-        if session.query(Patent.patent_number).filter_by(patent_number=p["patent_number"]).scalar() is None:
-            patent_objects.append(p_obj)
+        # A patent can have multiple assignees. If the assignee orgnization is in one of our tables (e.g. Companies,
+        # AlternateNames), add an entry in the patents table for each name
+        for assignee in p["assignees"]:
+            # There is also an "assignee_key_id" field, which is currently unused
+            assignee_organization = assignee["assignee_organization"]
+            assignee_first_name = assignee["assignee_first_name"]
+            assignee_last_name = assignee["assignee_last_name"]
+
+            # Check if the assignee is in one of the tables: companies, alternate_names
+            assignee_id = session.query(Company).filter(func.lower(Company.name) == assignee_organization.lower()).first()
+            assignee_alternate_id = None
+            print(assignee_id, assignee_alternate_id)
+            if not assignee_id:
+                result = session.query(AlternateName.id, AlternateName.company_id)\
+                    .filter(func.lower(Company.name) == assignee_organization.lower()).first()
+                print(result)
+                if result:
+                    assignee_id, assignee_alternate_id = result
+
+            # If it is, add the record
+            if assignee_id:
+                p_obj = Patent(patent_number=p["patent_number"],
+                               patent_title=p["patent_title"],
+                               company_id=assignee_id,
+                               year=p["patent_year"],
+                               grant_date=p["patent_date"],
+                               uspc_class=uspc_main_classes,
+                               assignee_first_name=assignee_first_name,
+                               assignee_last_name=assignee_last_name,
+                               company_alternate_name_id=assignee_alternate_id
+                               )
+                # Check if the patent is already in the database; add it if it is not
+                print(assignee_alternate_id)
+                if session.query(Patent)\
+                        .filter_by(patent_number=p["patent_number"], company_id=assignee_id,
+                                   company_alternate_name_id=assignee_alternate_id) is None:
+                    patent_objects.append(p_obj)
+
+    # Save the patents
     session.bulk_save_objects(patent_objects)
     session.commit()
+
+
+def process_all_companies_in_db():
+    # max_company_id = session.query(func.max(Patent.company_id)).scalar()
+    # Insert patents
+    for company_id in session.query(Company.id).all():
+        company_id = company_id[0]
+        primary_names = session.query(Company.name).filter_by(id=company_id).all()
+        alternate_names = session.query(AlternateName.name, AlternateName.id).filter_by(company_id=company_id).all()
+
+        for org in primary_names:
+            patents = get_all_company_patents(org[0], verbose=True)
+            if patents:
+                add_patents(patents)
+
+        for org, alternate_name_id in alternate_names:
+            patents = get_all_company_patents(org, verbose=True)
+            if patents:
+                add_patents(patents)
 
 
 def main():
@@ -237,17 +290,7 @@ def main():
     # Insert company names
     insert_names(options.path[0])
 
-    max_company_id = session.query(func.max(Patent.company_id)).scalar()
-    # Insert patents
-    for company_id in session.query(Company.id).all():
-        company_id = company_id[0]
-        companies = session.query(Company.name).filter_by(id=company_id).all()
-        companies += session.query(AlternateName.name).filter_by(company_id=company_id).all()
-
-        for org in companies:
-            patents = get_all_company_patents(org[0], verbose=True)
-            if patents:
-                add_patents(patents, company_id, org)
+    add_patents(get_all_company_patents("ABBOTT LABORATORIES", 2006, 2007, verbose=True))
 
 
 def get_options():
