@@ -12,6 +12,7 @@ import argparse
 Base = declarative_base()
 engine = create_engine('sqlite:///patensview.db')
 
+
 # Move Base classes to different file: https://stackoverflow.com/a/7479122/6288413
 class AlternateName(Base):
     __tablename__ = "alternate_company_names"
@@ -231,13 +232,15 @@ def add_patents(patents):
             assignee_last_name = assignee["assignee_last_name"]
 
             # Check if the assignee is in one of the tables: companies, alternate_names
-            assignee_id = session.query(Company).filter(func.lower(Company.name) == assignee_organization.lower())
+            assignee_id = session.query(Company.id).filter(
+                func.lower(Company.name) == assignee_organization.lower()).first()
             assignee_alternate_id = None
-            print(assignee_id, assignee_alternate_id)
-            if not assignee_id:
+            if assignee_id:
+                assignee_id = assignee_id.id
+            else:
+                # TODO find a company/patent that statisfies this path so that this can be tested
                 result = session.query(AlternateName.id, AlternateName.company_id)\
                     .filter(func.lower(Company.name) == assignee_organization.lower()).first()
-                print(result)
                 if result:
                     assignee_id, assignee_alternate_id = result
 
@@ -253,11 +256,11 @@ def add_patents(patents):
                                assignee_last_name=assignee_last_name,
                                company_alternate_name_id=assignee_alternate_id
                                )
+
                 # Check if the patent is already in the database; add it if it is not
-                print(assignee_alternate_id)
                 if session.query(Patent)\
                         .filter_by(patent_number=p["patent_number"], company_id=assignee_id,
-                                   company_alternate_name_id=assignee_alternate_id) is None:
+                                   company_alternate_name_id=assignee_alternate_id).first() is None:
                     patent_objects.append(p_obj)
 
     # Save the patents
@@ -289,9 +292,20 @@ def main():
 
     # Insert company names
     if options.path:
-        insert_names(options.path[0])
+        try:
+            insert_names(options.path[0])
+        except Exception as e:
+            print("Error Occurred: %s" % str(e))
 
-    add_patents(get_all_company_patents("ABBOTT LABORATORIES", 2006, 2007, verbose=True))
+    start_date = None
+    if options.start_date:
+        start_date = options.start_date[0]
+
+    end_date = None
+    if options.start_date:
+        end_date = options.end_date[0]
+
+    add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
 
 
 def get_options():
@@ -319,9 +333,13 @@ def get_options():
         help="The companies whose patents you want to retrieve."
     )
 
+    parser.add_argument(
+        '--verbose', action="store_true",
+        help="Enable verbose."
+    )
+
     options = parser.parse_args()
-    if not options.path:
-        parser.error("Please submit a path.")
+
     return options
 
 
