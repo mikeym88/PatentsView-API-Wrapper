@@ -82,9 +82,16 @@ class Patent(Base):
 
 class CitedPatent(Base):
     __tablename__ = 'cited_patents'
+    __table_args__ = (
+        PrimaryKeyConstraint('citing_patent_number', 'cited_patent_number'),
+    )
     # id/patent_id
-    citing_patent_number = Column(String, ForeignKey('patents.patent_number'), primary_key=True)
+    citing_patent_number = Column(String, ForeignKey('patents.patent_number'))
     cited_patent_number = Column(String, ForeignKey('patents.patent_number'))
+
+    def __init__(self, patent_number, cited_patent_number):
+        self.citing_patent_number = patent_number
+        self.cited_patent_number = cited_patent_number
 
 
 Base.metadata.create_all(engine)
@@ -223,11 +230,43 @@ def get_company_primary_id(name):
 
 
 def add_cited_patents(patents_list, verbose=False):
-    q = ['{"patent_number":"%s"}' % patent_number for patent_number in patents_list]
-    q = PVQF.pv_and_or("_or", q)
     results_format = '["patent_number","cited_patent_number"]'
-    return patentsview_get_request(patent_search_endpoint, q, results_format, # options_param=None, sort_param=None,
-                            verbose=verbose)
+    q_list = ['{"patent_number":"%s"}' % patent_number for patent_number in patents_list]
+    q_str = PVQF.pv_and_or("_or", q_list)
+
+    # PatentsView only accepts GET requests; the endpoints for GET requests have a max length of 2000 characters.
+    # As such if the length of the endpoint exceeds the maximum allowed length, a '414 URI Too Long' error is returned.
+    # (for an explanation see: https://stackoverflow.com/a/50018203/6288413)
+    # To circumvent the issue, we have to break up the query into chunks
+    patents = []
+    endpoint_length = len(patent_search_endpoint) + len('&q=') + len(q_str) + len('&f=') + len(results_format)
+    if endpoint_length < 2000:
+        response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
+        results = json.loads(response)
+        patents = results['patents']
+    else:
+        number_of_chunks = endpoint_length // 2000 + 1
+        for i in range(number_of_chunks):
+            start_index = i * (len(q_list) // number_of_chunks)
+            end_index = (i + 1) * (len(q_list) // number_of_chunks) - 1
+            end_index = min(end_index, len(q_list) - 1)
+            q_str = PVQF.pv_and_or("_or", q_list[start_index:end_index])
+            response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
+            results = json.loads(response)
+            patents += results['patents']
+
+    # Add the patents to the cited patents list
+    for patent in patents:
+        patent_number = patent["patent_number"]
+        for cited_patent_number in patent["cited_patents"]:
+            # Check if there are cited patents in the results and if they are already in the database
+            cited_patent_number = cited_patent_number["cited_patent_number"]
+            entry_exists = session.query(CitedPatent).filter_by(citing_patent_number=patent_number,
+                                                                cited_patent_number=cited_patent_number).first()
+            if cited_patent_number and not entry_exists:
+                cited_patent = CitedPatent(patent_number, cited_patent_number)
+                session.add(cited_patent)
+    session.commit()
 
 
 def add_patents(patents):
@@ -335,7 +374,7 @@ def main():
     l = []
     for number in session.query(Patent.patent_number).all():
         l.append(number.patent_number)
-    print(add_cited_patents(l))
+    add_cited_patents(l, verbose=True)
 
 
 def get_options():
