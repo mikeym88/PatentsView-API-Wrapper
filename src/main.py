@@ -8,6 +8,7 @@ from os import path
 import pandas
 import html
 import argparse
+from datetime import datetime
 
 Base = declarative_base()
 engine = create_engine('sqlite:///patensview.db')
@@ -55,8 +56,8 @@ class Patent(Base):
     patent_title = Column(String)
     company_id = Column(Integer, ForeignKey('companies.id'))
     company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id'), nullable=True)
-    year = Column(String)
-    grant_date = Column(String)
+    year = Column(Integer)
+    grant_date = Column(DateTime)
     uspc_class = Column(String)
     assignee_first_name = Column(String)
     assignee_last_name = Column(String)
@@ -73,7 +74,7 @@ class Patent(Base):
         self.company_id = company_id
         self.company_alternate_name_id = company_alternate_name_id
         self.year = year
-        self.grant_date = grant_date
+        self.grant_date = datetime.strptime(grant_date, '%Y-%m-%d')
         self.uspc_class = uspc_class
         self.assignee_first_name = assignee_first_name
         self.assignee_last_name = assignee_last_name
@@ -98,9 +99,18 @@ COMPANY_SEARCH_CRITERIA = '_eq'
 
 
 # Application Variables
-search_base_url = "http://www.patentsview.org/"
+search_base_url = "https://www.patentsview.org/"
 patent_search_endpoint = search_base_url + "api/patents/query"
 assignee_search_endpoint = search_base_url + "api/assignees/query"
+
+
+def get_patent(patent_number, fields=None):
+    patent_query = '{"patent_number":"%s"}' % patent_number
+    fields = ('["patent_number","patent_title","patent_abstract","patent_date","patent_year",'
+              '"patent_kind","patent_type","patent_processing_time","app_number","assignee_country","assignee_id",'
+              '"assignee_organization","nber_category_title","nber_subcategory_title",'
+              '"wipo_sector_title","wipo_field_title"]')
+    return patentsview_get_request(patent_search_endpoint, patent_query, fields)
 
 
 def get_all_company_patents(company, beginning_year=None, end_year=None, verbose=False):
@@ -212,6 +222,14 @@ def get_company_primary_id(name):
     return None
 
 
+def add_cited_patents(patents_list, verbose=False):
+    q = ['{"patent_number":"%s"}' % patent_number for patent_number in patents_list]
+    q = PVQF.pv_and_or("_or", q)
+    results_format = '["patent_number","cited_patent_number"]'
+    return patentsview_get_request(patent_search_endpoint, q, results_format, # options_param=None, sort_param=None,
+                            verbose=verbose)
+
+
 def add_patents(patents):
     patent_objects = []
     for p in patents:
@@ -268,10 +286,15 @@ def add_patents(patents):
     session.commit()
 
 
-def process_all_companies_in_db():
-    # max_company_id = session.query(func.max(Patent.company_id)).scalar()
+def process_all_companies_in_db(resume_from_latest=False):
+    if resume_from_latest:
+        max_company_id = session.query(func.max(Patent.company_id)).scalar()
+        company_query = session.query(Company.id).filter(Company.id >= max_company_id).all()
+    else:
+        company_query = session.query(Company.id).all()
+
     # Insert patents
-    for company_id in session.query(Company.id).all():
+    for company_id in company_query:
         company_id = company_id[0]
         primary_names = session.query(Company.name).filter_by(id=company_id).all()
         alternate_names = session.query(AlternateName.name, AlternateName.id).filter_by(company_id=company_id).all()
@@ -304,8 +327,15 @@ def main():
     end_date = None
     if options.start_date:
         end_date = options.end_date[0]
+    # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
 
-    add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
+    # 7252992
+    # patent = get_patent(7252992)
+    # print(patent)
+    l = []
+    for number in session.query(Patent.patent_number).all():
+        l.append(number.patent_number)
+    print(add_cited_patents(l))
 
 
 def get_options():
