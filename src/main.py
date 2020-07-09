@@ -6,7 +6,7 @@ from sqlalchemy.orm import *
 from sqlalchemy.ext.declarative import declarative_base
 from os import path
 import pandas
-import html
+from urllib.parse import quote
 import argparse
 from datetime import datetime
 
@@ -125,17 +125,19 @@ def get_all_company_patents(company, beginning_year=None, end_year=None, verbose
     patents = first_page["patents"]
     number_of_pages = 1
     if first_page["total_patent_count"] > first_page["count"]:
-        number_of_pages = first_page["total_patent_count"] // 25 + 1
+        number_of_pages = first_page["total_patent_count"] // 25
+        if first_page["total_patent_count"] % 25:
+            number_of_pages += 1
     for page_number in range(2, number_of_pages + 1):
         page_results = get_one_page_of_company_patents(company, beginning_year, end_year, page_number, verbose=verbose)
-        patents += page_results["patents"]
+        if page_results["patents"]:
+            patents += page_results["patents"]
     # TODO see if it is better to yield instead of to return
     return patents
 
 
 def get_one_page_of_company_patents(company, beginning_year=None, end_year=None, page=1, perpage=25, verbose=False):
     print("Requesting PatentsView: %s, page %d" % (company, page))
-    company = html.escape(company).replace("&#x27;", "'")
     company_query = '{"%s":{"assignee_organization":"%s"}}' % (COMPANY_SEARCH_CRITERIA, company)
     date_range = None
 
@@ -158,7 +160,7 @@ def get_one_page_of_company_patents(company, beginning_year=None, end_year=None,
     return response
 
 
-# https://stackoverflow.com/questions/41686536/querying-patentsview-for-patents-of-multiple-assignee-organization
+# https://stackoverflow.com/a/41837318/6288413
 def patentsview_get_request(endpoint, query_param, format_param=None, options_param=None, sort_param=None,
                             verbose=False):
     if not endpoint:
@@ -166,13 +168,16 @@ def patentsview_get_request(endpoint, query_param, format_param=None, options_pa
     if not query_param:
         raise ValueError("query_param is empty or None.")
 
-    endpoint_query = endpoint + "?q=" + query_param
+    # Use urllib.parse's quote to escape JSON strings. See:
+    # - https://stackoverflow.com/a/45758514/6288413
+    # - https://stackoverflow.com/a/18723973/6288413
+    endpoint_query = endpoint + "?q=" + quote(query_param)
     if format_param is not None:
-        endpoint_query = endpoint_query + "&f=" + format_param
+        endpoint_query = endpoint_query + "&f=" + quote(format_param)
     if options_param is not None:
-        endpoint_query = endpoint_query + "&o=" + options_param
+        endpoint_query = endpoint_query + "&o=" + quote(options_param)
     if sort_param is not None:
-        endpoint_query = endpoint_query + "&so=" + sort_param
+        endpoint_query = endpoint_query + "&so=" + quote(sort_param)
     if verbose:
         print(endpoint_query)
     r = requests.get(endpoint_query)
@@ -255,6 +260,7 @@ def add_cited_patents(patents_list, verbose=False):
             results = json.loads(response)
             patents += results['patents']
 
+    cited_patent_objects = []
     # Add the patents to the cited patents list
     for patent in patents:
         patent_number = patent["patent_number"]
@@ -265,8 +271,11 @@ def add_cited_patents(patents_list, verbose=False):
                                                                 cited_patent_number=cited_patent_number).first()
             if cited_patent_number and not entry_exists:
                 cited_patent = CitedPatent(patent_number, cited_patent_number)
-                session.add(cited_patent)
+                cited_patent_objects.append(cited_patent)
+
+    session.bulk_save_objects(cited_patent_objects)
     session.commit()
+    # TODO: add patents not in Patents table
 
 
 def add_patents(patents):
@@ -295,11 +304,12 @@ def add_patents(patents):
             if assignee_id:
                 assignee_id = assignee_id.id
             else:
-                # TODO find a company/patent that statisfies this path so that this can be tested
+                # TODO find a company/patent that satisfies this path so that this can be tested
                 result = session.query(AlternateName.id, AlternateName.company_id)\
-                    .filter(func.lower(Company.name) == assignee_organization.lower()).first()
+                    .filter(func.lower(AlternateName.name) == assignee_organization.lower()).first()
                 if result:
-                    assignee_id, assignee_alternate_id = result
+                    assignee_id = result.company_id
+                    assignee_alternate_id = result.id
 
             # If it is, add the record
             if assignee_id:
@@ -315,6 +325,7 @@ def add_patents(patents):
                                )
 
                 # Check if the patent is already in the database; add it if it is not
+                # TODO: change this so that the database is not read so frequently
                 if session.query(Patent)\
                         .filter_by(patent_number=p["patent_number"], company_id=assignee_id,
                                    company_alternate_name_id=assignee_alternate_id).first() is None:
@@ -325,7 +336,7 @@ def add_patents(patents):
     session.commit()
 
 
-def process_all_companies_in_db(resume_from_latest=False):
+def fetch_patents_for_all_companies_in_db(resume_from_latest=False):
     if resume_from_latest:
         max_company_id = session.query(func.max(Patent.company_id)).scalar()
         company_query = session.query(Company.id).filter(Company.id >= max_company_id).all()
@@ -349,6 +360,13 @@ def process_all_companies_in_db(resume_from_latest=False):
                 add_patents(patents)
 
 
+def fetch_all_cited_patents_for_all_patents_in_db():
+    l = []
+    for number in session.query(Patent.patent_number).all():
+        l.append(number.patent_number)
+    add_cited_patents(l, verbose=True)
+
+
 def main():
     options = get_options()
 
@@ -367,14 +385,8 @@ def main():
     if options.start_date:
         end_date = options.end_date[0]
     # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
-
-    # 7252992
-    # patent = get_patent(7252992)
-    # print(patent)
-    l = []
-    for number in session.query(Patent.patent_number).all():
-        l.append(number.patent_number)
-    add_cited_patents(l, verbose=True)
+    # fetch_patents_for_all_companies_in_db(resume_from_latest=True)
+    fetch_patents_for_all_companies_in_db()
 
 
 def get_options():
