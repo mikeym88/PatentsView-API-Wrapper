@@ -18,6 +18,12 @@ This project is a wrapper for the PatentsView API.
     * Different organization names have different `assignee_id`s and `assignee_key_id`s (see `NETFLIX` example above).
  
 
+## Database Structure
+
+Here is an Entity Relationship Diagram (ERD) of the database structure.
+
+![Entity Relationship Diagram (ERD) of the database structure](images/patents_view_table.png)
+
 ## Selecting Patents
 
 Use the following to select patents 
