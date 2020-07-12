@@ -21,7 +21,6 @@ This project is a wrapper for the PatentsView API.
 
 Create an Microsoft Excel spreadsheet (`.xlsx` file) with the following structure:
 
-
 <table>
     <thead>
         <tr>
@@ -48,12 +47,6 @@ Create an Microsoft Excel spreadsheet (`.xlsx` file) with the following structur
             <td>Name 2</td>
             <td>Name 3</td>
             <td>Name 4</td>
-            <td>Name 5</td>
-            <td>Name 6</td>
-            <td>Name 7</td>
-            <td>Name 8</td>
-            <td>Name 9</td>
-            <td>Name 10</td>
             <td>...</td>
             <td>Name X</td>
         </tr>
@@ -63,12 +56,6 @@ Create an Microsoft Excel spreadsheet (`.xlsx` file) with the following structur
             <td>Name 2</td>
             <td>Name 3</td>
             <td>Name 4</td>
-            <td>Name 5</td>
-            <td>Name 6</td>
-            <td>Name 7</td>
-            <td>Name 8</td>
-            <td>Name 9</td>
-            <td>Name 10</td>
             <td>...</td>
             <td>Name X</td>
         </tr>
