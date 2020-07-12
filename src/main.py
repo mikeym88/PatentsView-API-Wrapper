@@ -21,6 +21,7 @@ class AlternateName(Base):
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey('companies.id'))
     name = Column(String, nullable=False, unique=True)
+    # key_id = Column(String, nullable=True, unique=True)
 
     def __init__(self, company_id, name):
         self.company_id = company_id
@@ -31,6 +32,7 @@ class Company(Base):
     __tablename__ = 'companies'
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
+    # key_id = Column(String, nullable=True, unique=True)
 
     def __init__(self, name):
         self.name = name
@@ -234,10 +236,15 @@ def get_company_primary_id(name):
     return None
 
 
-def add_cited_patents(patents_list, verbose=False):
+def add_cited_patents(patents_list, limit=25, verbose=False):
     results_format = '["patent_number","cited_patent_number"]'
+    """
     q_list = ['{"patent_number":"%s"}' % patent_number for patent_number in patents_list]
     q_str = PVQF.pv_and_or("_or", q_list)
+    """
+    q_list = ['"%s"' % patent_number for patent_number in patents_list]
+    q_str = '{"patent_number":[%s]}' % ",".join(q_list)
+
 
     # PatentsView only accepts GET requests; the endpoints for GET requests have a max length of 2000 characters.
     # As such if the length of the endpoint exceeds the maximum allowed length, a '414 URI Too Long' error is returned.
@@ -245,20 +252,33 @@ def add_cited_patents(patents_list, verbose=False):
     # To circumvent the issue, we have to break up the query into chunks
     patents = []
     endpoint_length = len(patent_search_endpoint) + len('&q=') + len(q_str) + len('&f=') + len(results_format)
-    if endpoint_length < 2000:
+
+    # The PatentsView API apparently only allows 25 patents to be looked up at a time, hence the need for limit
+    # TODO: investigate why this is and if there is a way to change it
+    if endpoint_length < 2000 and not limit:
         response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
         results = json.loads(response)
         patents = results['patents']
     else:
-        number_of_chunks = endpoint_length // 2000 + 1
-        for i in range(number_of_chunks):
-            start_index = i * (len(q_list) // number_of_chunks)
-            end_index = (i + 1) * (len(q_list) // number_of_chunks) - 1
+        if limit and ((endpoint_length // 2000) < (endpoint_length // limit)):
+            number_of_chunks = endpoint_length // limit + 1
+        else:
+            number_of_chunks = endpoint_length // 2000 + 1
+
+        interval = max(len(q_list) // number_of_chunks, limit)
+        num_intervals = range(len(q_list) // interval + 2)
+        print(num_intervals)
+        for i in num_intervals:
+            start_index = i * interval
+            end_index = (i + 1) * interval
             end_index = min(end_index, len(q_list) - 1)
-            q_str = PVQF.pv_and_or("_or", q_list[start_index:end_index])
+            # q_str = PVQF.pv_and_or("_or", q_list[start_index:end_index])
+            q_str = '{"patent_number":[%s]}' % ",".join(q_list[start_index:end_index])
             response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
             results = json.loads(response)
-            patents += results['patents']
+            print(results)
+            if results['patents']:
+                patents += results['patents']
 
     cited_patent_objects = []
     # Add the patents to the cited patents list
@@ -325,7 +345,7 @@ def add_patents(patents):
                                )
 
                 # Check if the patent is already in the database; add it if it is not
-                # TODO: change this so that the database is not read so frequently
+                # TODO: change this so that the database is not read so frequently from disk
                 if session.query(Patent)\
                         .filter_by(patent_number=p["patent_number"], company_id=assignee_id,
                                    company_alternate_name_id=assignee_alternate_id).first() is None:
@@ -386,7 +406,8 @@ def main():
         end_date = options.end_date[0]
     # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
     # fetch_patents_for_all_companies_in_db(resume_from_latest=True)
-    fetch_patents_for_all_companies_in_db()
+    # fetch_patents_for_all_companies_in_db()
+    fetch_all_cited_patents_for_all_patents_in_db()
 
 
 def get_options():
