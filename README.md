@@ -35,11 +35,11 @@ Create an Microsoft Excel spreadsheet (`.xlsx` file) with the following structur
        <tr>
             <th>ID</th>
             <th>Name 1</th>
-            <td>Name 2</td>
-            <td>Name 3</td>
-            <td>Name 4</td>
-            <td>...</td>
-            <td>Name X</td>
+            <th>Name 2</th>
+            <th>Name 3</th>
+            <th>Name 4</th>
+            <th>...</th>
+            <th>Name X</th>
         </tr>
     </thead>
     <tbody>
