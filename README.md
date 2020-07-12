@@ -31,13 +31,6 @@ Create an Microsoft Excel spreadsheet (`.xlsx` file) with the following structur
             <th></th>
             <th></th>
             <th></th>
-            <th></th>
-            <th></th>
-            <th></th>
-            <th></th>
-            <th></th>
-            <th></th>
-            <th></th>
         </tr>
     </thead>
     <tbody>
