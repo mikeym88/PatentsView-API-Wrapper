@@ -21,8 +21,8 @@ class PatentsViewQueryFormatting:
     @staticmethod
     def get_end_of_year(iso_date):
         d = datetime.strptime(iso_date[:4], '%Y')
-        d = d.replace(year=d.year + 1);
-        d = d - timedelta(microseconds=1);
+        d = d.replace(year=d.year + 1)
+        d = d - timedelta(microseconds=1)
         return d
 
     @staticmethod
