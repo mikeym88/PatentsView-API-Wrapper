@@ -267,12 +267,10 @@ def add_cited_patents(patents_list, limit=25, verbose=False):
 
         interval = max(len(q_list) // number_of_chunks, limit)
         num_intervals = range(len(q_list) // interval + 2)
-        print(num_intervals)
         for i in num_intervals:
             start_index = i * interval
             end_index = (i + 1) * interval
             end_index = min(end_index, len(q_list) - 1)
-            # q_str = PVQF.pv_and_or("_or", q_list[start_index:end_index])
             q_str = '{"patent_number":[%s]}' % ",".join(q_list[start_index:end_index])
             response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
             results = json.loads(response)
@@ -280,18 +278,26 @@ def add_cited_patents(patents_list, limit=25, verbose=False):
             if results['patents']:
                 patents += results['patents']
 
+    # Patents that are already in the db
+    cited_patents_in_db = [(x.citing_patent_number, x.cited_patent_number) for x in session.query(CitedPatent).all()]
+    # Patents fetched
     cited_patent_objects = []
-    # Add the patents to the cited patents list
+    # Add ALL cited patents to cited_patent_objects list
     for patent in patents:
         patent_number = patent["patent_number"]
         for cited_patent_number in patent["cited_patents"]:
             # Check if there are cited patents in the results and if they are already in the database
             cited_patent_number = cited_patent_number["cited_patent_number"]
-            entry_exists = session.query(CitedPatent).filter_by(citing_patent_number=patent_number,
-                                                                cited_patent_number=cited_patent_number).first()
-            if cited_patent_number and not entry_exists:
-                cited_patent = CitedPatent(patent_number, cited_patent_number)
-                cited_patent_objects.append(cited_patent)
+            if cited_patent_number:
+                cited_patent_objects.append((patent_number, cited_patent_number))
+
+    # Remove the patents that already in the database
+    cited_patent_objects = list(set(cited_patent_objects) - set(cited_patents_in_db))
+
+    # Add the cited patents to the database
+    for i in range(len(cited_patent_objects)):
+        patent_number, cited_patent_number = cited_patent_objects[i]
+        cited_patent_objects[i] = CitedPatent(patent_number, cited_patent_number)
 
     session.bulk_save_objects(cited_patent_objects)
     session.commit()
@@ -407,6 +413,7 @@ def main():
     # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
     # fetch_patents_for_all_companies_in_db(resume_from_latest=True)
     # fetch_patents_for_all_companies_in_db()
+
     fetch_all_cited_patents_for_all_patents_in_db()
 
 
