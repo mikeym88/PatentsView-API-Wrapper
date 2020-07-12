@@ -17,6 +17,64 @@ This project is a wrapper for the PatentsView API.
     * This means that a patent can be assigned to "IBM", "IBM Inc.", "International Business Machines".
     * Different organization names have different `assignee_id`s and `assignee_key_id`s (see `NETFLIX` example above).
  
+## Adding companies
+
+Create an Microsoft Excel spreadsheet (`.xlsx` file) with the following structure:
+
+
+<table>
+    <thead>
+        <tr>
+            <th>Firm ID</th>
+            <th>Firm Name</th>
+            <th>Alternative names </th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>ID2</td>
+            <td>Company 2 Primary Name / Name 1</td>
+            <td>Name 2</td>
+            <td>Name 3</td>
+            <td>Name 4</td>
+            <td>Name 5</td>
+            <td>Name 6</td>
+            <td>Name 7</td>
+            <td>Name 8</td>
+            <td>Name 9</td>
+            <td>Name 10</td>
+            <td>...</td>
+            <td>Name X</td>
+        </tr>
+        <tr>
+            <td>ID1</td>
+            <td>Company 1 Primary Name / Name 1</td>
+            <td>Name 2</td>
+            <td>Name 3</td>
+            <td>Name 4</td>
+            <td>Name 5</td>
+            <td>Name 6</td>
+            <td>Name 7</td>
+            <td>Name 8</td>
+            <td>Name 9</td>
+            <td>Name 10</td>
+            <td>...</td>
+            <td>Name X</td>
+        </tr>
+    </tbody>
+</table>
+
 
 ## Database Structure
 
