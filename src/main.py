@@ -238,13 +238,8 @@ def get_company_primary_id(name):
 
 def add_cited_patents(patents_list, limit=25, verbose=False):
     results_format = '["patent_number","cited_patent_number"]'
-    """
-    q_list = ['{"patent_number":"%s"}' % patent_number for patent_number in patents_list]
-    q_str = PVQF.pv_and_or("_or", q_list)
-    """
     q_list = ['"%s"' % patent_number for patent_number in patents_list]
     q_str = '{"patent_number":[%s]}' % ",".join(q_list)
-
 
     # PatentsView only accepts GET requests; the endpoints for GET requests have a max length of 2000 characters.
     # As such if the length of the endpoint exceeds the maximum allowed length, a '414 URI Too Long' error is returned.
@@ -314,25 +309,30 @@ def add_patents(patents):
         for mainclass in p["uspcs"]:
             if mainclass["uspc_mainclass_id"]:
                 uspc_main_classes += mainclass["uspc_mainclass_id"] + "; "
+        if not uspc_main_classes:
+            uspc_main_classes = None
 
         # A patent can have multiple assignees. If the assignee orgnization is in one of our tables (e.g. Companies,
         # AlternateNames), add an entry in the patents table for each name
         for assignee in p["assignees"]:
             # There is also an "assignee_key_id" field, which is currently unused
             assignee_organization = assignee["assignee_organization"]
+            if assignee_organization:
+                assignee_organization = assignee_organization.lower()
             assignee_first_name = assignee["assignee_first_name"]
             assignee_last_name = assignee["assignee_last_name"]
 
             # Check if the assignee is in one of the tables: companies, alternate_names
             assignee_id = session.query(Company.id).filter(
-                func.lower(Company.name) == assignee_organization.lower()).first()
+                func.lower(Company.name) == assignee_organization).first()
             assignee_alternate_id = None
             if assignee_id:
                 assignee_id = assignee_id.id
             else:
                 # TODO find a company/patent that satisfies this path so that this can be tested
+                # TODO handle case where there is no assignee organization, just an individual's first & last name
                 result = session.query(AlternateName.id, AlternateName.company_id)\
-                    .filter(func.lower(AlternateName.name) == assignee_organization.lower()).first()
+                    .filter(func.lower(AlternateName.name) == assignee_organization).first()
                 if result:
                     assignee_id = result.company_id
                     assignee_alternate_id = result.id
@@ -365,7 +365,7 @@ def add_patents(patents):
 def fetch_patents_for_all_companies_in_db(resume_from_latest=False):
     if resume_from_latest:
         max_company_id = session.query(func.max(Patent.company_id)).scalar()
-        company_query = session.query(Company.id).filter(Company.id >= max_company_id).all()
+        company_query = session.query(Company.id).filter(Company.id >= max_company_id).order_by(Company.id.asc()).all()
     else:
         company_query = session.query(Company.id).all()
 
@@ -410,11 +410,15 @@ def main():
     end_date = None
     if options.start_date:
         end_date = options.end_date[0]
-    # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
-    # fetch_patents_for_all_companies_in_db(resume_from_latest=True)
-    # fetch_patents_for_all_companies_in_db()
 
-    fetch_all_cited_patents_for_all_patents_in_db()
+    try:
+        # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
+        fetch_patents_for_all_companies_in_db(resume_from_latest=True)
+        # fetch_patents_for_all_companies_in_db()
+
+        fetch_all_cited_patents_for_all_patents_in_db()
+    except Exception as e:
+        print("Error: %s" % e)
 
 
 def get_options():
