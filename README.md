@@ -16,7 +16,12 @@ This project is a wrapper for the PatentsView API.
 * The assignee organizations (i.e. companies) are distinguished by name. Each organization name is a 'separate' company.
     * This means that a patent can be assigned to "IBM", "IBM Inc.", "International Business Machines".
     * Different organization names have different `assignee_id`s and `assignee_key_id`s (see `NETFLIX` example above).
- 
+* **Different endpoints behave differently**: particularly <https://www.patentsview.org/> and <https://dev.patentsview.org>
+    * **Naming is finicky on the first one**: If you search for `Abbott Laboratories` or for `ABBOTT LABORATORIES`, 
+    you will get the same results. If you search for `ABBOTT Laboratories`, `Abbott LABORATORIES`, 
+    or `abbott laboratories`, you will get nothing.
+    * The second one seems to work better, but you still have to replace the carriage return and line break characters.
+
 ## Adding companies
 
 Create an Microsoft Excel spreadsheet (`.xlsx` file) with the following structure:
@@ -73,7 +78,8 @@ Here is an Entity Relationship Diagram (ERD) of the database structure.
 
 ## Selecting Patents
 
-Use the following to select patents 
+Use the following to select patents between two dates:
+
 ```
 SELECT
 	p.patent_number as "Patent Number",
@@ -94,7 +100,10 @@ ON
 LEFT JOIN 
 	alternate_company_names as an
 ON
-	p.company_alternate_name_id = an.id;
+	p.company_alternate_name_id = an.id
+WHERE
+	p.grant_date > DATE("2006-01-03") AND
+	p.grant_date < DATE("2010-06-13");
 ```
 
 ## Software Applications
