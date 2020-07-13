@@ -4,6 +4,11 @@ This project is a wrapper for the PatentsView API.
 
 * [PatentsView Glossary](http://www.patentsview.org/api/glossary.html) provides a description of the variables.
 
+## Important Notes:
+
+* Use <https://dev.patentsview.org> and not <https://www.patentsview.org/>; the former is laxer in terms of accepting input
+* Naming is finicky (more so on the second one), even spacing and other character affect the search results (see below).
+
 ## Remarks about the data
 
 * Patent Numbers are alphanumeric (they can include letters)
