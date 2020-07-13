@@ -64,7 +64,7 @@ class Patent(Base):
     id = Column(Integer, primary_key=True)
     patent_number = Column(String)
     patent_title = Column(String)
-    company_id = Column(Integer, ForeignKey('companies.id'))
+    company_id = Column(Integer, ForeignKey('companies.id'), nullable=True)
     company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id'), nullable=True)
     year = Column(Integer)
     grant_date = Column(DateTime)
@@ -403,7 +403,7 @@ def main():
     # Insert company names
     if options.path:
         try:
-            insert_names(options.path[0])
+            insert_names(options.path)
         except Exception as e:
             print("Error Occurred: %s" % str(e))
 
@@ -416,11 +416,14 @@ def main():
         end_date = options.end_date[0]
 
     # TODO: implement functionality that uses the Start and End dates
-    """
-    fetch_patents_for_all_companies_in_db()
-    fetch_all_cited_patent_numbers_for_all_patents_in_db()
-    """
-    fetch_all_cited_patent_numbers_for_all_patents_in_db()
+    if options.fetch_patents_for_all_companies:
+        company_id = options.resume_from_company_id
+        if company_id:
+            print("Fetching patents for all companies in the database, starting with company id %s." % company_id)
+            fetch_patents_for_all_companies_in_db(company_id)
+        else:
+            print("Fetching patents for all companies in the database.")
+            fetch_patents_for_all_companies_in_db()
 
 
 def get_options():
@@ -429,8 +432,28 @@ def get_options():
     )
 
     parser.add_argument(
-        '-p', '--path', type=str, metavar="path", nargs=1,
+        '-p', '--path', type=str, metavar="path",
         help="The path of the spreadsheet that has the list of names and alternate names."
+    )
+
+    parser.add_argument(
+        '--fetch-patents-for-all-companies', action='store_true',
+        help="If passed, fetch patents for all companies in the database."
+    )
+
+    parser.add_argument(
+        '--fetch-cited-patent-numbers', action='store_true',
+        help="If passed, fetch the patent numbers for all patents in the database"
+    )
+
+    parser.add_argument(
+        '--fetch-all-cited-patents', action='store_true',
+        help="If passed, fetch patents for all companies in the database."
+    )
+
+    parser.add_argument(
+        '-r', '--resume-from-company-id', type=int,
+        help="Resume fetching patent from this company id."
     )
 
     parser.add_argument(
