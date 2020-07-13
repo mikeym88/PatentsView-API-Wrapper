@@ -13,7 +13,7 @@ import re
 
 
 Base = declarative_base()
-engine = create_engine('sqlite:///patensview.db')
+engine = create_engine('sqlite:///patentsview.db')
 
 
 # Move Base classes to different file: https://stackoverflow.com/a/7479122/6288413
@@ -111,7 +111,7 @@ COMPANY_SEARCH_CRITERIA = '_eq'
 
 
 # Application Variables
-search_base_url = "https://www.patentsview.org/"
+search_base_url = "https://dev.patentsview.org/"
 patent_search_endpoint = search_base_url + "api/patents/query"
 assignee_search_endpoint = search_base_url + "api/assignees/query"
 
@@ -222,10 +222,9 @@ def insert_names(file_path):
         Company.add_companies(df["Name 1"].to_list())
         for _, row in df.iterrows():
             index = df.columns.get_loc("Name 1")
-            primary_name = re.sub(" +", " ", re.sub("(\r|\n)", " ", row[index]))
+            primary_name = row[index]
             primary_id = session.query(Company.id).filter_by(name=primary_name).scalar()
-            alternate_names = [re.sub(" +", " ", re.sub("(\r|\n)", " ", name))
-                               for name in row[index+1:] if type(name) == str]
+            alternate_names = [name for name in row[index+1:] if type(name) == str]
             insert_alternate_names(primary_id, alternate_names, False)
         session.commit()
 
@@ -366,10 +365,9 @@ def add_patents(patents):
     session.commit()
 
 
-def fetch_patents_for_all_companies_in_db(resume_from_latest=False):
-    max_company_id = session.query(func.max(Patent.company_id)).scalar()
-    if resume_from_latest and max_company_id:
-        company_query = session.query(Company.id).filter(Company.id >= max_company_id).order_by(Company.id.asc()).all()
+def fetch_patents_for_all_companies_in_db(resume_from_company_id=None):
+    if resume_from_company_id and type(resume_from_company_id) == int:
+        company_query = session.query(Company.id).filter(Company.id >= resume_from_company_id).order_by(Company.id.asc()).all()
     else:
         company_query = session.query(Company.id).order_by(Company.id.asc()).all()
 
@@ -416,10 +414,10 @@ def main():
         end_date = options.end_date[0]
 
     # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
-    fetch_patents_for_all_companies_in_db(resume_from_latest=True)
+    fetch_patents_for_all_companies_in_db(resume_from_company_id=28)
     # fetch_patents_for_all_companies_in_db()
 
-    fetch_all_cited_patents_for_all_patents_in_db()
+    # fetch_all_cited_patents_for_all_patents_in_db()
 
 
 def get_options():
