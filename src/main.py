@@ -10,6 +10,7 @@ from urllib.parse import quote
 import argparse
 from datetime import datetime
 import re
+from typing import List
 
 
 Base = declarative_base()
@@ -23,7 +24,8 @@ class AlternateName(Base):
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey('companies.id'))
     name = Column(String, nullable=False, unique=True)
-    # key_id = Column(String, nullable=True, unique=True)
+    assignee_id = Column(String, nullable=True, unique=True)
+    assignee_key_id = Column(String, nullable=True, unique=True)
 
     def __init__(self, company_id, name):
         self.company_id = company_id
@@ -34,7 +36,8 @@ class Company(Base):
     __tablename__ = 'companies'
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False, unique=True)
-    # key_id = Column(String, nullable=True, unique=True)
+    assignee_id = Column(String, nullable=True, unique=True)
+    assignee_key_id = Column(String, nullable=True, unique=True)
 
     def __init__(self, name):
         self.name = name
@@ -176,7 +179,7 @@ def patentsview_get_request(endpoint, query_param, format_param=None, options_pa
     # Use urllib.parse's quote to escape JSON strings. See:
     # - https://stackoverflow.com/a/45758514/6288413
     # - https://stackoverflow.com/a/18723973/6288413
-    endpoint_query = endpoint + "?q=" + quote(query_param)
+    endpoint_query = endpoint + "?q=" + quote(re.sub("(\r?\n)", " ", query_param))
     if format_param is not None:
         endpoint_query = endpoint_query + "&f=" + quote(format_param)
     if options_param is not None:
@@ -268,7 +271,6 @@ def add_cited_patents(patents_list, limit=25, verbose=False):
         for i in num_intervals:
             start_index = i * interval
             end_index = (i + 1) * interval
-            end_index = min(end_index, len(q_list) - 1)
             q_str = '{"patent_number":[%s]}' % ",".join(q_list[start_index:end_index])
             response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
             results = json.loads(response)
@@ -388,7 +390,7 @@ def fetch_patents_for_all_companies_in_db(resume_from_company_id=None):
                 add_patents(patents)
 
 
-def fetch_all_cited_patents_for_all_patents_in_db():
+def fetch_all_cited_patent_numbers_for_all_patents_in_db():
     l = []
     for number in session.query(Patent.patent_number).all():
         l.append(number.patent_number)
@@ -413,11 +415,12 @@ def main():
     if options.start_date:
         end_date = options.end_date[0]
 
-    # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
-    fetch_patents_for_all_companies_in_db(resume_from_company_id=28)
-    # fetch_patents_for_all_companies_in_db()
-
-    # fetch_all_cited_patents_for_all_patents_in_db()
+    # TODO: implement functionality that uses the Start and End dates
+    """
+    fetch_patents_for_all_companies_in_db()
+    fetch_all_cited_patent_numbers_for_all_patents_in_db()
+    """
+    fetch_all_cited_patent_numbers_for_all_patents_in_db()
 
 
 def get_options():
