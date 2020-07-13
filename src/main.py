@@ -9,6 +9,8 @@ import pandas
 from urllib.parse import quote
 import argparse
 from datetime import datetime
+import re
+
 
 Base = declarative_base()
 engine = create_engine('sqlite:///patensview.db')
@@ -52,7 +54,10 @@ class Company(Base):
 
 class Patent(Base):
     __tablename__ = 'patents'
-    # id/patent_id
+    # the combination of Patent Number, Company Name ID, and Alternate Name ID should be unique
+    # Source: https://stackoverflow.com/a/10061143/6288413
+    __table_args__ = (UniqueConstraint('patent_number', 'company_id', 'company_alternate_name_id',
+                                       name='_patents_uc'),)
     id = Column(Integer, primary_key=True)
     patent_number = Column(String)
     patent_title = Column(String)
@@ -63,11 +68,6 @@ class Patent(Base):
     uspc_class = Column(String)
     assignee_first_name = Column(String)
     assignee_last_name = Column(String)
-
-    # the combination of Patent Number, Company Name ID, and Alternate Name ID should be unique
-    # Source: https://stackoverflow.com/a/10061143/6288413
-    __table_args__ = (UniqueConstraint('patent_number', 'company_id', 'company_alternate_name_id',
-                                       name='_customer_location_uc'),)
 
     def __init__(self, patent_number, patent_title, company_id, year, grant_date, uspc_class,
                  assignee_first_name, assignee_last_name, company_alternate_name_id=None):
@@ -85,9 +85,12 @@ class Patent(Base):
 class CitedPatent(Base):
     __tablename__ = 'cited_patents'
     __table_args__ = (
-        PrimaryKeyConstraint('citing_patent_number', 'cited_patent_number'),
+        # PrimaryKeyConstraint('citing_patent_number', 'cited_patent_number'),
+        UniqueConstraint('citing_patent_number', 'cited_patent_number',
+                         name='_citing_patents_uc'),
     )
-    # id/patent_id
+
+    id = Column(Integer, primary_key=True)
     citing_patent_number = Column(String, ForeignKey('patents.patent_number'))
     cited_patent_number = Column(String, ForeignKey('patents.patent_number'))
 
@@ -219,9 +222,10 @@ def insert_names(file_path):
         Company.add_companies(df["Name 1"].to_list())
         for _, row in df.iterrows():
             index = df.columns.get_loc("Name 1")
-            primary_name = row[index]
+            primary_name = re.sub(" +", " ", re.sub("(\r|\n)", " ", row[index]))
             primary_id = session.query(Company.id).filter_by(name=primary_name).scalar()
-            alternate_names = [name for name in row[index+1:] if type(name) == str]
+            alternate_names = [re.sub(" +", " ", re.sub("(\r|\n)", " ", name))
+                               for name in row[index+1:] if type(name) == str]
             insert_alternate_names(primary_id, alternate_names, False)
         session.commit()
 
@@ -363,11 +367,11 @@ def add_patents(patents):
 
 
 def fetch_patents_for_all_companies_in_db(resume_from_latest=False):
-    if resume_from_latest:
-        max_company_id = session.query(func.max(Patent.company_id)).scalar()
+    max_company_id = session.query(func.max(Patent.company_id)).scalar()
+    if resume_from_latest and max_company_id:
         company_query = session.query(Company.id).filter(Company.id >= max_company_id).order_by(Company.id.asc()).all()
     else:
-        company_query = session.query(Company.id).all()
+        company_query = session.query(Company.id).order_by(Company.id.asc()).all()
 
     # Insert patents
     for company_id in company_query:
@@ -411,14 +415,11 @@ def main():
     if options.start_date:
         end_date = options.end_date[0]
 
-    try:
-        # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
-        fetch_patents_for_all_companies_in_db(resume_from_latest=True)
-        # fetch_patents_for_all_companies_in_db()
+    # add_patents(get_all_company_patents("Abbott Laboratories", start_date, end_date, verbose=options.verbose))
+    fetch_patents_for_all_companies_in_db(resume_from_latest=True)
+    # fetch_patents_for_all_companies_in_db()
 
-        fetch_all_cited_patents_for_all_patents_in_db()
-    except Exception as e:
-        print("Error: %s" % e)
+    fetch_all_cited_patents_for_all_patents_in_db()
 
 
 def get_options():
