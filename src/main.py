@@ -12,7 +12,6 @@ from datetime import datetime
 import re
 from typing import List
 
-
 Base = declarative_base()
 engine = create_engine('sqlite:///patentsview.db')
 
@@ -94,8 +93,8 @@ class CitedPatent(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    citing_patent_number = Column(String, ForeignKey('patents.patent_number'))
-    cited_patent_number = Column(String, ForeignKey('patents.patent_number'))
+    citing_patent_number = Column(String) #, ForeignKey('patents.patent_number'))
+    cited_patent_number = Column(String) #, ForeignKey('patents.patent_number'))
 
     def __init__(self, patent_number, cited_patent_number):
         self.citing_patent_number = patent_number
@@ -107,11 +106,9 @@ Base.metadata.bind = engine
 dbSession = sessionmaker(bind=engine)
 session = dbSession()
 
-
 # setting for searching for company name
 # e.g.:     "_eq", "_begins", etc.
 COMPANY_SEARCH_CRITERIA = '_eq'
-
 
 # Application Variables
 search_base_url = "https://dev.patentsview.org/"
@@ -227,7 +224,7 @@ def insert_names(file_path):
             index = df.columns.get_loc("Name 1")
             primary_name = row[index]
             primary_id = session.query(Company.id).filter_by(name=primary_name).scalar()
-            alternate_names = [name for name in row[index+1:] if type(name) == str]
+            alternate_names = [name for name in row[index + 1:] if type(name) == str]
             insert_alternate_names(primary_id, alternate_names, False)
         session.commit()
 
@@ -244,7 +241,7 @@ def get_company_primary_id(name):
 
 def fetch_all_cited_patent_numbers_for_all_patents_in_db(verbose=False):
     l = []
-    for number in session.query(Patent.patent_number).all():
+    for number in session.query(Patent.patent_number).distinct().all():
         l.append(number.patent_number)
     add_cited_patent_numbers(l, verbose=verbose)
 
@@ -259,7 +256,7 @@ def add_cited_patents(limit=25, verbose=False):
     patents_in_db = session.query(Patent.patent_number)
     cited_patents_to_add = [x.cited_patent_number for x in session.query(CitedPatent.cited_patent_number)\
         .filter(~CitedPatent.cited_patent_number.in_(patents_in_db)).all()]
-    for patents in fetch_patents_by_number(cited_patents_to_add, results_format , limit=limit, verbose=verbose):
+    for patents in fetch_patents_by_number(cited_patents_to_add, results_format, limit=limit, verbose=verbose):
         add_patents(patents)
 
 
@@ -376,31 +373,31 @@ def add_patents(patents):
             else:
                 # TODO find a company/patent that satisfies this path so that this can be tested
                 # TODO handle case where there is no assignee organization, just an individual's first & last name
-                result = session.query(AlternateName.id, AlternateName.company_id)\
+                result = session.query(AlternateName.id, AlternateName.company_id) \
                     .filter(func.lower(AlternateName.name) == assignee_organization).first()
                 if result:
                     assignee_id = result.company_id
                     assignee_alternate_id = result.id
 
-            # If it is, add the record
-            if assignee_id:
-                p_obj = Patent(patent_number=p["patent_number"],
-                               patent_title=p["patent_title"],
-                               company_id=assignee_id,
-                               year=p["patent_year"],
-                               grant_date=p["patent_date"],
-                               uspc_class=uspc_main_classes,
-                               assignee_first_name=assignee_first_name,
-                               assignee_last_name=assignee_last_name,
-                               company_alternate_name_id=assignee_alternate_id
-                               )
+            p_obj = Patent(patent_number=p["patent_number"],
+                           patent_title=p["patent_title"],
+                           company_id=assignee_id,
+                           year=p["patent_year"],
+                           grant_date=p["patent_date"],
+                           uspc_class=uspc_main_classes,
+                           assignee_first_name=assignee_first_name,
+                           assignee_last_name=assignee_last_name,
+                           company_alternate_name_id=assignee_alternate_id
+                           )
 
-                # Check if the patent is already in the database; add it if it is not
-                # TODO: change this so that the database is not read so frequently from disk
-                if session.query(Patent)\
-                        .filter_by(patent_number=p["patent_number"], company_id=assignee_id,
-                                   company_alternate_name_id=assignee_alternate_id).first() is None:
-                    patent_objects.append(p_obj)
+            # Check if the patent is already in the database; add it if it is not
+            # TODO: change this so that the database is not read so frequently from disk
+            if session.query(Patent).filter_by(patent_number=p["patent_number"],
+                                               company_id=assignee_id,
+                                               company_alternate_name_id=assignee_alternate_id,
+                                               assignee_first_name=assignee_first_name,
+                                               assignee_last_name=assignee_last_name,).first() is None:
+                patent_objects.append(p_obj)
 
     # Save the patents
     session.bulk_save_objects(patent_objects)
@@ -409,7 +406,8 @@ def add_patents(patents):
 
 def fetch_patents_for_all_companies_in_db(resume_from_company_id=None, verbose=False):
     if resume_from_company_id and type(resume_from_company_id) == int:
-        company_query = session.query(Company.id).filter(Company.id >= resume_from_company_id).order_by(Company.id.asc()).all()
+        company_query = session.query(Company.id).filter(Company.id >= resume_from_company_id).order_by(
+            Company.id.asc()).all()
     else:
         company_query = session.query(Company.id).order_by(Company.id.asc()).all()
 
@@ -449,7 +447,6 @@ def main():
         end_date = options.end_date[0]
 
     # TODO: implement functionality that uses the Start and End dates
-    """
     if options.fetch_patents_for_all_companies:
         company_id = options.resume_from_company_id
         if company_id:
@@ -460,14 +457,13 @@ def main():
             fetch_patents_for_all_companies_in_db()
 
     fetch_all_cited_patent_numbers_for_all_patents_in_db()
-    """
-    add_cited_patents()
+    add_cited_patents(verbose=True)
 
 
 def get_options():
     parser = argparse.ArgumentParser(description="A script that calls the PatentsView API.",
-        # formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+                                     # formatter_class=argparse.RawDescriptionHelpFormatter
+                                     )
 
     parser.add_argument(
         '-p', '--path', type=str, metavar="path",
