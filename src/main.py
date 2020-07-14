@@ -242,8 +242,34 @@ def get_company_primary_id(name):
     return None
 
 
-def add_cited_patents(patents_list, limit=25, verbose=False):
+def fetch_all_cited_patent_numbers_for_all_patents_in_db(verbose=False):
+    l = []
+    for number in session.query(Patent.patent_number).all():
+        l.append(number.patent_number)
+    add_cited_patent_numbers(l, verbose=verbose)
+
+
+def add_cited_patents(limit=25, verbose=False):
+    # This function populates the patents table with the missing information for the
+    # patent numbers found in the cited_patents table
+    # TODO refactor this function to accept a list of patents
+    results_format = ('["patent_number","patent_date","patent_year","assignee_organization","app_date",'
+                      '"patent_title","uspc_mainclass_id","assignee_first_name","assignee_last_name"]'
+                      )
+    patents_in_db = session.query(Patent.patent_number)
+    cited_patents_to_add = [x.cited_patent_number for x in session.query(CitedPatent.cited_patent_number)\
+        .filter(~CitedPatent.cited_patent_number.in_(patents_in_db)).all()]
+    for patents in fetch_patents_by_number(cited_patents_to_add, results_format , limit=limit, verbose=verbose):
+        add_patents(patents)
+
+
+def add_cited_patent_numbers(patents_list, limit=25, verbose=False):
     results_format = '["patent_number","cited_patent_number"]'
+    for patents in fetch_patents_by_number(patents_list, results_format, limit=limit, verbose=verbose):
+        add_cited_patent_numbers_to_db(patents)
+
+
+def fetch_patents_by_number(patents_list, results_format, limit=25, verbose=False):
     q_list = ['"%s"' % patent_number for patent_number in patents_list]
     q_str = '{"patent_number":[%s]}' % ",".join(q_list)
 
@@ -260,6 +286,7 @@ def add_cited_patents(patents_list, limit=25, verbose=False):
         response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
         results = json.loads(response)
         patents = results['patents']
+        yield patents
     else:
         if limit and ((endpoint_length // 2000) < (endpoint_length // limit)):
             number_of_chunks = endpoint_length // limit + 1
@@ -274,16 +301,29 @@ def add_cited_patents(patents_list, limit=25, verbose=False):
             q_str = '{"patent_number":[%s]}' % ",".join(q_list[start_index:end_index])
             response = patentsview_get_request(patent_search_endpoint, q_str, results_format, verbose=verbose)
             results = json.loads(response)
-            print(results)
+            if verbose:
+                print(results)
             if results['patents']:
                 patents += results['patents']
 
+            # This is to potentially avoid a "Segmentation Fault (core dumped)" error
+
+            # TODO change this to an implementation that is more programmatic
+            if len(patents) >= 1000:
+                yield patents
+                patents = []
+        yield patents
+
+
+def add_cited_patent_numbers_to_db(citing_patent_numbers: List) -> None:
+    print("Adding cited patent numbers to db.")
     # Patents that are already in the db
-    cited_patents_in_db = [(x.citing_patent_number, x.cited_patent_number) for x in session.query(CitedPatent).all()]
+    cited_patents_in_db = [(x.citing_patent_number, x.cited_patent_number) for x in
+                           session.query(CitedPatent).all()]
     # Patents fetched
     cited_patent_objects = []
     # Add ALL cited patents to cited_patent_objects list
-    for patent in patents:
+    for patent in citing_patent_numbers:
         patent_number = patent["patent_number"]
         for cited_patent_number in patent["cited_patents"]:
             # Check if there are cited patents in the results and if they are already in the database
@@ -367,7 +407,7 @@ def add_patents(patents):
     session.commit()
 
 
-def fetch_patents_for_all_companies_in_db(resume_from_company_id=None):
+def fetch_patents_for_all_companies_in_db(resume_from_company_id=None, verbose=False):
     if resume_from_company_id and type(resume_from_company_id) == int:
         company_query = session.query(Company.id).filter(Company.id >= resume_from_company_id).order_by(Company.id.asc()).all()
     else:
@@ -380,21 +420,14 @@ def fetch_patents_for_all_companies_in_db(resume_from_company_id=None):
         alternate_names = session.query(AlternateName.name, AlternateName.id).filter_by(company_id=company_id).all()
 
         for org in primary_names:
-            patents = get_all_company_patents(org[0], verbose=True)
+            patents = get_all_company_patents(org[0], verbose=verbose)
             if patents:
                 add_patents(patents)
 
         for org, alternate_name_id in alternate_names:
-            patents = get_all_company_patents(org, verbose=True)
+            patents = get_all_company_patents(org, verbose=verbose)
             if patents:
                 add_patents(patents)
-
-
-def fetch_all_cited_patent_numbers_for_all_patents_in_db():
-    l = []
-    for number in session.query(Patent.patent_number).all():
-        l.append(number.patent_number)
-    add_cited_patents(l, verbose=True)
 
 
 def main():
@@ -416,6 +449,7 @@ def main():
         end_date = options.end_date[0]
 
     # TODO: implement functionality that uses the Start and End dates
+    """
     if options.fetch_patents_for_all_companies:
         company_id = options.resume_from_company_id
         if company_id:
@@ -424,6 +458,10 @@ def main():
         else:
             print("Fetching patents for all companies in the database.")
             fetch_patents_for_all_companies_in_db()
+
+    fetch_all_cited_patent_numbers_for_all_patents_in_db()
+    """
+    add_cited_patents()
 
 
 def get_options():
