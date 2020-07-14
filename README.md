@@ -81,9 +81,10 @@ Here is an Entity Relationship Diagram (ERD) of the database structure.
 
 ![Entity Relationship Diagram (ERD) of the database structure](images/patents_view_table.png)
 
-## Selecting Patents
+## Using SQL to Select Patents
 
-Use the following to select patents between two dates:
+The `sql` folder has some SQL scripts that might come in handy. 
+As an example, here is SQL query that selects patents between two dates:
 
 ```
 SELECT
