@@ -76,11 +76,11 @@ class Patent(Base):
     company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id'), nullable=True)
     year = Column(Integer)
     grant_date = Column(DateTime)
-    cpc_subsection_id = Column(String)  # new version of the API doesn't return USPCs
+    cpc_group_id = Column(String)  # new version of the API does return USPCs
     assignee_first_name = Column(String)
     assignee_last_name = Column(String)
 
-    def __init__(self, patent_number, patent_title, company_id, year, grant_date, cpc_subsection_id,
+    def __init__(self, patent_number, patent_title, company_id, year, grant_date, cpc_group_id,
                  assignee_first_name, assignee_last_name, company_alternate_name_id=None):
         self.patent_number = patent_number
         self.patent_title = patent_title
@@ -88,7 +88,7 @@ class Patent(Base):
         self.company_alternate_name_id = company_alternate_name_id
         self.year = year
         self.grant_date = datetime.strptime(grant_date, '%Y-%m-%d')
-        self.cpc_subsection_id = cpc_subsection_id
+        self.cpc_group_id = cpc_group_id
         self.assignee_first_name = assignee_first_name
         self.assignee_last_name = assignee_last_name
 
@@ -479,7 +479,7 @@ def add_patents(patents):
                            company_id=assignee_id,
                            year=p["patent_year"],
                            grant_date=p["patent_date"],
-                           cpc_subsection_id=cpc_subsection_id,
+                           cpc_group_id=cpc_group_id,
                            assignee_first_name=assignee_first_name,
                            assignee_last_name=assignee_last_name,
                            company_alternate_name_id=assignee_alternate_id
