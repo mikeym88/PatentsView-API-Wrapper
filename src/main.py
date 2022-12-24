@@ -119,6 +119,10 @@ session = dbSession()
 # e.g.:     "_eq", "_begins", etc.
 COMPANY_SEARCH_CRITERIA = '_text_phrase'
 
+# if not specified, the API returns a request size of 100 (previously it was 25)
+# it can be set as high as 1000
+REQUEST_SIZE = 100
+
 # Application Variables
 search_base_url = "https://search.patentsview.org/"
 patent_search_endpoint = search_base_url + "api/v1/patent/"
