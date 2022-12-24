@@ -301,6 +301,7 @@ def insert_names(file_path):
     if not os.path.exists(file_path):
         raise ValueError("Not a valid path %s" % file_path)
     if file_path[-4:] == "xlsx":
+        print("reading {}".format(file_path))
         df = pandas.read_excel(file_path, header=1)
         Company.add_companies(df["Name 1"].to_list())
         for _, row in df.iterrows():
