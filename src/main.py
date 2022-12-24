@@ -224,11 +224,14 @@ def patentsview_post_request(endpoint, query_param, format_param=None, options_p
     if not query_param:
         raise ValueError("query_param is empty or None.")
 
-    verbose = True  # temp
     # Use urllib.parse's quote to escape JSON strings. See:
     # - https://stackoverflow.com/a/45758514/6288413
     # - https://stackoverflow.com/a/18723973/6288413
-    body = '{"q":' + re.sub("(\r?\n)", " ", query_param) 
+    body = '{"q":' + re.sub("(\r?\n)", " ", query_param)
+
+    # now for paging there needs to be sort field
+    if sort_param is None:
+       sort_param = '[{"' + get_default_sort_field(endpoint) + '":"desc"}]'
 
     if format_param is not None:
         body = body + ',"f":' + format_param
@@ -626,6 +629,21 @@ def get_options():
 
     return options
 
+# most of the nested endpoints use {endpoint}_id these are the exceptions
+use_patent_id = ["us_application_citation", "us_patent_citation", 
+"rel_app_text", "foreign_citation"]
+
+# Now for paging there has to be a sort field.  Here we'll provide defaults
+# for each endpoint if one isn't specied
+def get_default_sort_field(endpoint):
+
+   # grab the last item on the url 
+   fields = endpoint.split("/")
+   ending = fields[-2]
+   if ending in use_patent_id:
+      return "patent_id"
+   else:
+      return ending + "_id"
 
 if __name__ == "__main__":
     try:
