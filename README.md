@@ -24,7 +24,7 @@ This project is a wrapper for the PatentsView API.
     * As an example: `NETFLIX, INC.` has an `assignee_key_id` of `17594` and an `assignee_id` of `org_2lAuxOpAtNMvtTxhuLmX`; `NETFLIX.COM, INC.` on the other hand an `assignee_key_id` of `org_UNHkzir8tY7NlQrOJKT4` and an `assignee_id` of `363028`. (This of course assumes `NETFLIX, INC.` and `NETFLIX.COM, INC.` are the same company, which is highly probable).
     * The same applies for acquisitions. Example: Company A has patent *X*; once company B acquires company A, patent *X* would still show that it is assigned to company *A*.
     * Probably the same thing holds if a company acquires certain patents of another company.
-* The patents can be assigned to organizations (as opposed to individuals). This is indicated by the 'assignees_at_grant.organization' field returned by the API.
+* The patents can be assigned to organizations (as opposed to individuals). This is indicated by the 'assignees.assignee_organization' field returned by the API.
 * The assignee organizations (i.e. companies) are distinguished by name. Each organization name is a 'separate' company.
     * This means that a patent can be assigned to "IBM", "IBM Inc.", "International Business Machines".
     * Different organization names have different `assignee_id`s and `assignee_key_id`s (see `NETFLIX` example above).
