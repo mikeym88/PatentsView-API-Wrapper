@@ -98,7 +98,7 @@ SELECT
 	an.name as "Company Name Listed on Patent",
 	p.year,
 	p.grant_date as "Grant Date",
-	p.cpc_subsection_id as "CPC Subsections"
+	p.cpc_group_id as "CPC Subsections"
 FROM 
 	patents as p
 JOIN 
