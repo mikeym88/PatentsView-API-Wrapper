@@ -30,7 +30,7 @@ class AlternateName(Base):
     __tablename__ = "alternate_company_names"
 
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey('companies.id'))
+    company_id = Column(Integer, ForeignKey('companies.id', name="fk1"))
     name = Column(String, nullable=False, unique=True)
     assignee_id = Column(String, nullable=True, unique=True)
     assignee_key_id = Column(String, nullable=True, unique=True)
@@ -102,8 +102,8 @@ class CitedPatent(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    citing_patent_number = Column(String) #, ForeignKey('patents.patent_number'))
-    cited_patent_number = Column(String) #, ForeignKey('patents.patent_number'))
+    citing_patent_number = Column(String, ForeignKey('patents.patent_number', name="fk2"))
+    cited_patent_number = Column(String, ForeignKey('patents.patent_number', name="fk1"))
 
     def __init__(self, patent_number, cited_patent_number):
         self.citing_patent_number = patent_number
