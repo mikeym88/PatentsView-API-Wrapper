@@ -72,8 +72,8 @@ class Patent(Base):
     id = Column(Integer, primary_key=True)
     patent_number = Column(String)
     patent_title = Column(String)
-    company_id = Column(Integer, ForeignKey('companies.id'), nullable=True)
-    company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id'), nullable=True)
+    company_id = Column(Integer, ForeignKey('companies.id', name="fk2"), nullable=True)
+    company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id', name="fk1"), nullable=True)
     year = Column(Integer)
     grant_date = Column(DateTime)
     cpc_group_id = Column(String)  # new version of the API does return USPCs
