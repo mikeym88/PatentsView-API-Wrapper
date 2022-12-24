@@ -11,6 +11,7 @@ import argparse
 from datetime import datetime
 import re
 from typing import List
+import time
 
 Base = declarative_base()
 engine = create_engine('sqlite:///patentsview.db')
@@ -237,7 +238,7 @@ def patentsview_post_request(endpoint, query_param, format_param=None, options_p
     if 429 == r.status_code:
         print("Throttled response from the api, retry in {} seconds".format(r.headers["Retry-After"]))
         time.sleep(int(r.headers["Retry-After"]))  # Number of seconds to wait before sending next request
-        r = requests.post(endpoint, headers=headers, json=params)  # retry query now
+        r = requests.post(endpoint, headers=headers, data=body, hooks={'response': print_roundtrip})  # retry query now
 
     if r.status_code != requests.codes.ok:
         if 400 <= r.status_code <= 499:
