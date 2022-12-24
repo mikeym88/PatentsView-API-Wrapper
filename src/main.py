@@ -123,7 +123,10 @@ COMPANY_SEARCH_CRITERIA = '_text_phrase'
 search_base_url = "https://search.patentsview.org/"
 patent_search_endpoint = search_base_url + "api/v1/patent/"
 assignee_search_endpoint = search_base_url + "api/v1/assignee/"
-citation_search_endpoint =  search_base_url + "api/v1/patent_citation/"
+citation_search_endpoint =  search_base_url + "api/v1/patent/us_patent_citation/"
+
+# The new version of the API now does return USPCs but we'll stay with cpcs
+# After May 2015 the patent office stopped assigning uspcs to utility patents
 
 import textwrap
 import requests
