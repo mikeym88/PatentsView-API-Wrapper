@@ -14,7 +14,7 @@ This project is a wrapper for the PatentsView API.
 * There needs to be an environmental variable PATENTSVIEW_API_KEY set to the value of your API key.
 * The endpoints of the new version of the API are at <https://search.patentsview.org>, they had last been at <https://api.patentsview.org/>.
 * The API team produced a [Swagger UI page](https://search.patentsview.org/swagger-ui/) for the new version of the API. Your API key can be entered by pressing the Authorize button.
-* The new version of the API does not seem to return USPC classifications, the code was switched to use CPC classifications.
+* The new version of the API now returns USPC classifications, but we'll use CPC classifications.  After May 2015 the patent office stopped assigning USPCs to utility patents.
 
 ## Remarks about the data
 
