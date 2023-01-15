@@ -11,6 +11,7 @@ import argparse
 from datetime import datetime
 import re
 from typing import List
+import time
 
 Base = declarative_base()
 engine = create_engine('sqlite:///patentsview.db')
@@ -29,7 +30,7 @@ class AlternateName(Base):
     __tablename__ = "alternate_company_names"
 
     id = Column(Integer, primary_key=True)
-    company_id = Column(Integer, ForeignKey('companies.id'))
+    company_id = Column(Integer, ForeignKey('companies.id', name="fk1"))
     name = Column(String, nullable=False, unique=True)
     assignee_id = Column(String, nullable=True, unique=True)
     assignee_key_id = Column(String, nullable=True, unique=True)
@@ -71,15 +72,15 @@ class Patent(Base):
     id = Column(Integer, primary_key=True)
     patent_number = Column(String)
     patent_title = Column(String)
-    company_id = Column(Integer, ForeignKey('companies.id'), nullable=True)
-    company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id'), nullable=True)
+    company_id = Column(Integer, ForeignKey('companies.id', name="fk2"), nullable=True)
+    company_alternate_name_id = Column(Integer, ForeignKey('alternate_company_names.id', name="fk1"), nullable=True)
     year = Column(Integer)
     grant_date = Column(DateTime)
-    cpc_subsection_id = Column(String)  # new version of the API doesn't return USPCs
+    cpc_group_id = Column(String)  # new version of the API does return USPCs
     assignee_first_name = Column(String)
     assignee_last_name = Column(String)
 
-    def __init__(self, patent_number, patent_title, company_id, year, grant_date, cpc_subsection_id,
+    def __init__(self, patent_number, patent_title, company_id, year, grant_date, cpc_group_id,
                  assignee_first_name, assignee_last_name, company_alternate_name_id=None):
         self.patent_number = patent_number
         self.patent_title = patent_title
@@ -87,7 +88,7 @@ class Patent(Base):
         self.company_alternate_name_id = company_alternate_name_id
         self.year = year
         self.grant_date = datetime.strptime(grant_date, '%Y-%m-%d')
-        self.cpc_subsection_id = cpc_subsection_id
+        self.cpc_group_id = cpc_group_id
         self.assignee_first_name = assignee_first_name
         self.assignee_last_name = assignee_last_name
 
@@ -101,8 +102,8 @@ class CitedPatent(Base):
     )
 
     id = Column(Integer, primary_key=True)
-    citing_patent_number = Column(String) #, ForeignKey('patents.patent_number'))
-    cited_patent_number = Column(String) #, ForeignKey('patents.patent_number'))
+    citing_patent_number = Column(String, ForeignKey('patents.patent_number', name="fk2"))
+    cited_patent_number = Column(String, ForeignKey('patents.patent_number', name="fk1"))
 
     def __init__(self, patent_number, cited_patent_number):
         self.citing_patent_number = patent_number
@@ -118,11 +119,18 @@ session = dbSession()
 # e.g.:     "_eq", "_begins", etc.
 COMPANY_SEARCH_CRITERIA = '_text_phrase'
 
+# if not specified, the API returns a request size of 100 (previously it was 25)
+# it can be set as high as 1000
+REQUEST_SIZE = 100
+
 # Application Variables
 search_base_url = "https://search.patentsview.org/"
 patent_search_endpoint = search_base_url + "api/v1/patent/"
 assignee_search_endpoint = search_base_url + "api/v1/assignee/"
-citation_search_endpoint =  search_base_url + "api/v1/patent_citation/"
+citation_search_endpoint =  search_base_url + "api/v1/patent/us_patent_citation/"
+
+# The new version of the API now does return USPCs but we'll stay with cpcs
+# After May 2015 the patent office stopped assigning uspcs to utility patents
 
 import textwrap
 import requests
@@ -151,34 +159,38 @@ def print_roundtrip(response, *args, **kwargs):
 
 
 def get_patent(patent_number, fields=None):
-    patent_query = '{"patent_number":"%s"}' % patent_number
-    fields = ('["patent_number","patent_title","patent_abstract","patent_date","patent_year",'
-              '"cpc_current.cpc_subsection_id","cpc_current","patent_kind","patent_type",'
-              '"assignees_at_grant.country","assignees_at_grant.assignee_id",'
-              '"assignees_at_grant.organization"]')
+    patent_query = '{"patent_id":"%s"}' % patent_number
+    fields = ('["patent_id","patent_title","patent_abstract","patent_date","patent_year",'
+              '"cpc_current.cpc_group_id","cpc_current","patent_kind","patent_type",'
+              '"assignees.assignee_country","assignees.assignee_assignee_id",'
+              '"assignees.assignee_organization",,"assignees.assignee_name_first","assignees.assignee_name_last"]')
     return patentsview_post_request(patent_search_endpoint, patent_query, fields)
 
 
 def get_all_company_patents(company, beginning_year=None, end_year=None, verbose=False):
+
     first_page = get_one_page_of_company_patents(company, beginning_year, end_year, verbose=verbose)
     patents = first_page["patents"]
     number_of_pages = 1
+
     # API change, attribute was total_patent_count, now total_hits
     if first_page["total_hits"] > first_page["count"]:
-        number_of_pages = first_page["total_hits"] // 25
-        if first_page["total_hits"] % 25:
+        after = patents[-1]["patent_id"]  
+        number_of_pages = first_page["total_hits"] // REQUEST_SIZE
+        if first_page["total_hits"] % REQUEST_SIZE:
             number_of_pages += 1
-    for page_number in range(2, number_of_pages + 1):
-        page_results = get_one_page_of_company_patents(company, beginning_year, end_year, page_number, verbose=verbose)
-        if page_results["patents"]:
-            patents += page_results["patents"]
+        for page_number in range(1, number_of_pages):
+            page_results = get_one_page_of_company_patents(company, beginning_year, end_year, verbose=verbose, after=after)
+            if page_results["patents"]:
+                patents += page_results["patents"]
+                after = patents[-1]["patent_id"] 
     # TODO see if it is better to yield instead of to return
     return patents
 
 
-def get_one_page_of_company_patents(company, beginning_year=None, end_year=None, page=1, perpage=25, verbose=False):
-    print("Requesting PatentsView: %s, page %d" % (company, page))
-    company_query = '{"%s":{"assignees_at_grant.organization":"%s"}}' % (COMPANY_SEARCH_CRITERIA, company)
+def get_one_page_of_company_patents(company, beginning_year=None, end_year=None, perpage=REQUEST_SIZE, verbose=False, after=""):
+    print("Requesting PatentsView: %s" % (company))
+    company_query = '{"%s":{"assignees.assignee_organization":"%s"}}' % (COMPANY_SEARCH_CRITERIA, company)
     date_range = None
 
     if beginning_year is not None and end_year is not None:
@@ -188,25 +200,31 @@ def get_one_page_of_company_patents(company, beginning_year=None, end_year=None,
     else:
         search_query = company_query
 
-    results_format = ('["patent_number","patent_date","patent_year","assignees_at_grant.organization",'
-                      '"cpc_current.cpc_subsection_id","cpc_current",'
-                      '"patent_title","assignees_at_grant.name_first","assignees_at_grant.name_last"]'
+    results_format = ('["patent_id","patent_date","patent_year","assignees.assignee_organization",'
+                      '"cpc_current.cpc_group_id","cpc_current",'
+                      '"patent_title","assignees.assignee_name_first","assignees.assignee_name_last"]'
                       )
-                      
-    # old way: options_param = '{"page":%d,"per_page":%d}' % (page, perpage)
-    # new version of the api:
-    options_param =  '{"offset":%d, "size":%d}' % ((page-1) * perpage, perpage)
 
-    response_in_json = patentsview_post_request(patent_search_endpoint, search_query,
+    options = {}
+    options["size"] = perpage  # the API defaults "size" to 100 rows if not specified and it can be up to 1000
+                      
+    # paging the newest way, we have to supply the previous pages' last element in the "after" parameter
+    # it also means that there has to be a sort
+
+    if after != "":
+       options["after"] = after
+
+    options_param =  json.dumps(options) 
+
+    response = patentsview_post_request(patent_search_endpoint, search_query,
                                                results_format, options_param=options_param, verbose=verbose)
-    response = json.loads(response_in_json)
     if verbose:
         print(response)
     return response
 
 
 # https://stackoverflow.com/a/41837318/6288413
-# sort_param could be something like '[{"patent_date":"desc"},{"patent_number":"desc"}]'
+# sort_param could be something like '[{"patent_date":"desc"},{"patent_id":"desc"}]'
 def patentsview_post_request(endpoint, query_param, format_param=None, options_param=None, sort_param=None,
                             verbose=False):
     if not endpoint:
@@ -214,11 +232,14 @@ def patentsview_post_request(endpoint, query_param, format_param=None, options_p
     if not query_param:
         raise ValueError("query_param is empty or None.")
 
-    verbose = True  # temp
     # Use urllib.parse's quote to escape JSON strings. See:
     # - https://stackoverflow.com/a/45758514/6288413
     # - https://stackoverflow.com/a/18723973/6288413
-    body = '{"q":' + re.sub("(\r?\n)", " ", query_param) 
+    body = '{"q":' + re.sub("(\r?\n)", " ", query_param)
+
+    # now for paging there needs to be sort field
+    if sort_param is None:
+       sort_param = '[{"' + get_default_sort_field(endpoint) + '":"desc"}]'
 
     if format_param is not None:
         body = body + ',"f":' + format_param
@@ -237,7 +258,7 @@ def patentsview_post_request(endpoint, query_param, format_param=None, options_p
     if 429 == r.status_code:
         print("Throttled response from the api, retry in {} seconds".format(r.headers["Retry-After"]))
         time.sleep(int(r.headers["Retry-After"]))  # Number of seconds to wait before sending next request
-        r = requests.post(endpoint, headers=headers, json=params)  # retry query now
+        r = requests.post(endpoint, headers=headers, data=body, hooks={'response': print_roundtrip})  # retry query now
 
     if r.status_code != requests.codes.ok:
         if 400 <= r.status_code <= 499:
@@ -250,7 +271,7 @@ def patentsview_post_request(endpoint, query_param, format_param=None, options_p
 
         raise Exception("Status code: %s\r\n%s\n" % (r.status_code, r.text, extra))
 
-    return r.text
+    return json.loads(r.text)
 
 
 def insert_alternate_names(primary_id, alternate_names, commit_after_insert=True):
@@ -280,6 +301,7 @@ def insert_names(file_path):
     if not os.path.exists(file_path):
         raise ValueError("Not a valid path %s" % file_path)
     if file_path[-4:] == "xlsx":
+        print("reading {}".format(file_path))
         df = pandas.read_excel(file_path, header=1)
         Company.add_companies(df["Name 1"].to_list())
         for _, row in df.iterrows():
@@ -304,17 +326,17 @@ def get_company_primary_id(name):
 def fetch_all_cited_patent_numbers_for_all_patents_in_db(verbose=False):
     l = []
     for number in session.query(Patent.patent_number).distinct().all():
-        l.append(number.patent_number)
+        l.append('"' + number.patent_number + '"')
     add_cited_patent_numbers(l, verbose=verbose)
 
 
-def add_cited_patents(limit=25, verbose=False):
+def add_cited_patents(limit=REQUEST_SIZE, verbose=False):
     # This function populates the patents table with the missing information for the
     # patent numbers found in the cited_patents table
     # TODO refactor this function to accept a list of patents
-    results_format = ('["patent_number","patent_date","patent_year",'
-                      '"assignees_at_grant.organization","cpc_current",'
-                      '"patent_title","assignees_at_grant.name_first","assignees_at_grant.name_last"]'
+    results_format = ('["patent_id","patent_date","patent_year",'
+                      '"assignees.assignee_organization","cpc_current",'
+                      '"patent_title","assignees.assignee_name_first","assignees.assignee_name_last"]'
                       )
     patents_in_db = session.query(Patent.patent_number)
     cited_patents_to_add = [x.cited_patent_number for x in session.query(CitedPatent.cited_patent_number)\
@@ -322,84 +344,32 @@ def add_cited_patents(limit=25, verbose=False):
     for patents in fetch_patents_by_number(patent_search_endpoint, cited_patents_to_add, results_format, limit=limit, verbose=verbose):
         add_patents(patents)
 
-def add_cited_patent_numbers(patents_list, limit=25, verbose=False):
-    results_format = '["patent_number","cited_patent_number"]'
+def add_cited_patent_numbers(patents_list, limit=REQUEST_SIZE, verbose=False):
+    results_format = '["patent_id","citation_patent_id"]'
     # now we only get the citations from the citation endpoint
-    cited_patents = fetch_patents_by_number(citation_search_endpoint, patents_list, results_format, limit=limit, verbose=verbose)
 
-    # we have to call to get the details of the cited patents and then add them to the database
-    # TODO refactor to make this a constant etc
-    patents_format =  ('["patent_number","patent_date","patent_year",'
-                      '"assignees_at_grant.organization","cpc_current",'
-                      '"patent_title","assignees_at_grant.name_first","assignees_at_grant.name_last"]'
-                      )
+    for citations in fetch_patents_by_number(citation_search_endpoint, patents_list, results_format, limit=limit, verbose=verbose):
+        add_cited_patent_numbers_to_db(citations)
 
-    for patents in fetch_patents_by_number(patent_search_endpoint, cited_patents, patents_format, limit=limit, verbose=verbose):
-        add_cited_patent_numbers_to_db(patents)
+def fetch_patents_by_number(search_endpoint, patents_list, results_format, limit=REQUEST_SIZE, verbose=False):
 
+    # We'll post requests in batches of limit number of patents at a time
+    # so we won't have to page 
+    number_of_batches = (len(patents_list) + limit - 1) // limit
 
-def fetch_patents_by_number(search_endpoint, patents_list, results_format, limit=25, verbose=False):
-    q_list = ['"%s"' % patent_number for patent_number in patents_list]
-    q_str = '{"patent_number":[%s]}' % ",".join(q_list)
-
-    # ** the api does accept POST requests
-    # PatentsView only accepts GET requests; the endpoints for GET requests have a max length of 2000 characters.
-    # As such if the length of the endpoint exceeds the maximum allowed length, a '414 URI Too Long' error is returned.
-    # (for an explanation see: https://stackoverflow.com/a/50018203/6288413)
-    # To circumvent the issue, we have to break up the query into chunks
-    patents = []
-    endpoint_length = len(patent_search_endpoint) + len('&q=') + len(q_str) + len('&f=') + len(results_format)
-
-    # TODO: rework this
-    # ** the options parameter needs to be set to retrieve move than 25 patents at a time
-    # With the new API the default is increased to 100
-    # ** options parameter "size": 1000  is max request size now, originally "per_page": 10000 
-
-    # The PatentsView API apparently only allows 25 patents to be looked up at a time, hence the need for limit
-    # TODO: investigate why this is and if there is a way to change it
-
-    # we're calling either the patent endpoint or the new patent_citation endpoint
-    # the nested entity we need will either be patents or patent_citations
+    # Currently we're calling either the patent endpoint or patent_citation endpoint
+    # the returned entity will either be patents or patent_citations
     m = re.search(r'/([^/]*)/$', search_endpoint)
     return_entity = m.group(1) + "s"
-    print("return entity: {}".format(return_entity))
+    options_param =  '{"size":%d}' % (limit) 
 
-    if endpoint_length < 2000:
-        response = patentsview_post_request(search_endpoint, q_str, results_format, verbose=verbose)
-        results = json.loads(response)
-        # 'patents' if search_endpoint end in /patent/ 
-        patents = results[return_entity]
-        yield patents
-    else:
-        if limit and ((endpoint_length // 2000) < (endpoint_length // limit)):
-            number_of_chunks = endpoint_length // limit + 1
-        else:
-            number_of_chunks = endpoint_length // 2000 + 1
-
-        interval = max(len(q_list) // number_of_chunks, limit)
-        num_intervals = range(len(q_list) // interval + 2)
-
-        for i in num_intervals:
-            start_index = i * interval
-            end_index = (i + 1) * interval
-            print("start index: {} end_index: {}".format(start_index, end_index))
-
-            q_str = '{"patent_number":[%s]}' % ",".join(q_list[start_index:end_index])
-            response = patentsview_post_request(search_endpoint, q_str, results_format, verbose=verbose)
-
-            results = json.loads(response)
-            if verbose:
-                print(results)
-            if results[return_entity]:
-                patents += results[return_entity]
-
-            # This is to potentially avoid a "Segmentation Fault (core dumped)" error
-
-            # TODO change this to an implementation that is more programmatic
-            if len(patents) >= 1000:
-                yield patents
-                patents = []
-        yield patents
+    for i in range(number_of_batches):
+        start_index = i * limit
+        end_index = (i + 1) * limit
+        q_str = '{"patent_id":[%s]}' % ",".join(patents_list[start_index:end_index])
+        results = patentsview_post_request(search_endpoint, q_str, results_format, options_param=options_param, verbose=verbose)
+        entity = results[return_entity]
+        yield entity
 
 
 def add_cited_patent_numbers_to_db(citations: List) -> None:
@@ -410,11 +380,11 @@ def add_cited_patent_numbers_to_db(citations: List) -> None:
     # Patents fetched
     cited_patent_objects = []
     # Add ALL cited patents to cited_patent_objects list
-    # API change: now we get a list like these {"patent_number":"7767404","cited_patent_number":"7494776"}
+    # API change: now we get a list like these {"patent_id":"7767404","citation_patent_id":"7494776"}
     for citation in citations:
-        patent_number = citation["patent_number"]
+        patent_number = citation["patent_id"]
         # Check if there are cited patents in the results and if they are already in the database
-        cited_patent_number = citation["cited_patent_number"]
+        cited_patent_number = citation["citation_patent_id"]
         if cited_patent_number:
             cited_patent_objects.append((patent_number, cited_patent_number))
 
@@ -428,35 +398,43 @@ def add_cited_patent_numbers_to_db(citations: List) -> None:
 
     session.bulk_save_objects(cited_patent_objects)
     session.commit()
-    # TODO: add patents not in Patents table
-
 
 def add_patents(patents):
     patent_objects = []
     for p in patents:
-        cpc_subsection_id = ""  # "cpc_subsection": "https://search.patentsview.org/api/v1/cpc_subsection/B01/" 
+        cpc_group_id = ""  # now there is a cpc_group_id attribute, ex "cpc_group_id":"A47J43/0727"
 
-        # Concatenate the CPC cpc_subsection_id codes into the 'cpc_subsection_id' field
+        # Concatenate the CPC cpc_group_id codes into the 'cpc_group_id' field
         # Example entry: 'H01; Y02; '
-        for mainclass in p["cpc_current"]:
-            if mainclass["cpc_subsection"]:
-                m = re.search(r'/([^/]*)/$', mainclass["cpc_subsection"])
-                cpc_subsection_id += m.group(1) + "; "
-        if not cpc_subsection_id:
-            cpc_subsection_id = None
+
+        # a design patent wouldn't have cpcs and about 50% of plant patents don't have them
+        if "cpc_current" in p:  
+            for mainclass in p["cpc_current"]:
+                if mainclass["cpc_group_id"]:
+                    cpc_group_id += mainclass["cpc_group_id"] + "; "
+            if not cpc_group_id:
+                cpc_group_id = None
+        else:
+           cpc_group_id = None
 
         # A patent can have multiple assignees. If the assignee orgnization is in one of our tables (e.g. Companies,
         # AlternateNames), add an entry in the patents table for each name
-        # It's also possible that a cited patent had no assignees_at_grant
-        if "assignees_at_grant" in p:
-            for assignee in p["assignees_at_grant"]:
+        # It's also possible that a cited patent had no assignees
+        if "assignees" in p:
+            for assignee in p["assignees"]:
                 # The new version of the API doesn't seem to have an "assignee_key_id" 
                 # There is also an "assignee_key_id" field, which is currently unused
-                assignee_organization = assignee["organization"]
+                assignee_organization = assignee["assignee_organization"]
                 if assignee_organization:
                     assignee_organization = assignee_organization.lower()
-                assignee_first_name = assignee["name_first"]
-                assignee_last_name = assignee["name_last"]
+                if "assignee_name_first" in assignee:
+                    assignee_first_name = assignee["assignee_name_first"]
+                else:
+                   assignee_first_name = None
+                if "assignee_name_last" in assignee:
+                    assignee_last_name = assignee["assignee_name_last"]
+                else:
+                   assignee_last_name = None
 
                 # Check if the assignee is in one of the tables: companies, alternate_names
                 assignee_id = session.query(Company.id).filter(
@@ -473,12 +451,12 @@ def add_patents(patents):
                         assignee_id = result.company_id
                         assignee_alternate_id = result.id
 
-                p_obj = Patent(patent_number=p["patent_number"],
+                p_obj = Patent(patent_number=p["patent_id"],
                            patent_title=p["patent_title"],
                            company_id=assignee_id,
                            year=p["patent_year"],
                            grant_date=p["patent_date"],
-                           cpc_subsection_id=cpc_subsection_id,
+                           cpc_group_id=cpc_group_id,
                            assignee_first_name=assignee_first_name,
                            assignee_last_name=assignee_last_name,
                            company_alternate_name_id=assignee_alternate_id
@@ -486,7 +464,7 @@ def add_patents(patents):
 
                 # Check if the patent is already in the database; add it if it is not
                 # TODO: change this so that the database is not read so frequently from disk
-                if session.query(Patent).filter_by(patent_number=p["patent_number"],
+                if session.query(Patent).filter_by(patent_number=p["patent_id"],
                                                company_id=assignee_id,
                                                company_alternate_name_id=assignee_alternate_id,
                                                assignee_first_name=assignee_first_name,
@@ -608,6 +586,21 @@ def get_options():
 
     return options
 
+# most of the nested endpoints use {endpoint}_id these are the exceptions
+use_patent_id = ["us_application_citation", "us_patent_citation", 
+"rel_app_text", "foreign_citation"]
+
+# Now for paging there has to be a sort field.  Here we'll provide defaults
+# for each endpoint if one isn't specied
+def get_default_sort_field(endpoint):
+
+   # grab the last item on the url 
+   fields = endpoint.split("/")
+   ending = fields[-2]
+   if ending in use_patent_id:
+      return "patent_id"
+   else:
+      return ending + "_id"
 
 if __name__ == "__main__":
     try:

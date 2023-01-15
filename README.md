@@ -14,7 +14,7 @@ This project is a wrapper for the PatentsView API.
 * There needs to be an environmental variable PATENTSVIEW_API_KEY set to the value of your API key.
 * The endpoints of the new version of the API are at <https://search.patentsview.org>, they had last been at <https://api.patentsview.org/>.
 * The API team produced a [Swagger UI page](https://search.patentsview.org/swagger-ui/) for the new version of the API. Your API key can be entered by pressing the Authorize button.
-* The new version of the API does not seem to return USPC classifications, the code was switched to use CPC classifications.
+* The new version of the API now returns USPC classifications, but we'll use CPC classifications.  After May 2015 the patent office stopped assigning USPCs to utility patents.
 
 ## Remarks about the data
 
@@ -24,7 +24,7 @@ This project is a wrapper for the PatentsView API.
     * As an example: `NETFLIX, INC.` has an `assignee_key_id` of `17594` and an `assignee_id` of `org_2lAuxOpAtNMvtTxhuLmX`; `NETFLIX.COM, INC.` on the other hand an `assignee_key_id` of `org_UNHkzir8tY7NlQrOJKT4` and an `assignee_id` of `363028`. (This of course assumes `NETFLIX, INC.` and `NETFLIX.COM, INC.` are the same company, which is highly probable).
     * The same applies for acquisitions. Example: Company A has patent *X*; once company B acquires company A, patent *X* would still show that it is assigned to company *A*.
     * Probably the same thing holds if a company acquires certain patents of another company.
-* The patents can be assigned to organizations (as opposed to individuals). This is indicated by the 'assignees_at_grant.organization' field returned by the API.
+* The patents can be assigned to organizations (as opposed to individuals). This is indicated by the 'assignees.assignee_organization' field returned by the API.
 * The assignee organizations (i.e. companies) are distinguished by name. Each organization name is a 'separate' company.
     * This means that a patent can be assigned to "IBM", "IBM Inc.", "International Business Machines".
     * Different organization names have different `assignee_id`s and `assignee_key_id`s (see `NETFLIX` example above).
@@ -98,7 +98,7 @@ SELECT
 	an.name as "Company Name Listed on Patent",
 	p.year,
 	p.grant_date as "Grant Date",
-	p.cpc_subsection_id as "CPC Subsections"
+	p.cpc_group_id as "CPC Subsections"
 FROM 
 	patents as p
 JOIN 
